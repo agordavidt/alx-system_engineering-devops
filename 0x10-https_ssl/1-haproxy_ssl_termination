@@ -33,18 +33,32 @@ defaults
 	errorfile 503 /etc/haproxy/errors/503.http
 	errorfile 504 /etc/haproxy/errors/504.http
 
-frontend frontend-http
-        bind *:80
-        mode http
-	http-request set-header X-Forwarded-Proto http
-        default_backend http_back
+frontend www-http
+   bind *:80
+   # Adds http header to end of end of the HTTP request
+   reqadd X-Forwarded-Proto:\ http
+   # Sets the default backend to use which is defined below with name 'www-backend'
+   default_backend www-backend
 
-frontend frontend-https
-	bind *:443 ssl crt /etc/haproxy/certs/www.agordavid.tech.pem
-	http-request set-header X-Forwarded-Proto https
-	default_backend http_back
+# Add a frontend to handle incoming HTTPS connections
+frontend www-https
+    # Bind 443 with the generated letsencrypt cert.
+    bind *:443 ssl crt /etc/haproxy/certs/domain.pem
+    # set x-forward to https
+    reqadd X-Forwarded-Proto:\ https
+    # Select a Challenge
+    acl letsencrypt-acl path_beg /.well-known/acme-challenge/
+    # Use the challenge backend if the challenge is set
+    use_backend letsencrypt-backend if letsencrypt-acl
+    default_backend www-backend
 
-backend http_back
-        balance roundrobin
-        server 63210-web-01 18.204.20.180:80 check
-        server 63210-web-02 18.207.207.243:80 check
+backend www-backend
+   # ssl_fc: Returns true when the front connection was made via an SSL/TLS transport
+   redirect scheme https code 301 if !{ ssl_fc }
+   server www-1 18.204.20.180:80 check
+   server www-2 18.207.207.243:80 check
+
+backend letsencrypt-backend
+   # Lets encrypt backend server
+   server letsencrypt 127.0.0.1:54321
+
